@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Solar System with Belts and Realistic Spins</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { overflow: hidden; background: black; }
+    canvas { display: block; }
+    #sliderContainer {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: white;
+      font-family: sans-serif;
+      text-align: center;
+      background: rgba(0,0,0,0.5);
+      padding: 10px;
+      border-radius: 8px;
+    }
+    input[type=range] { width: 300px; }
+  </style>
+</head>
+<body>
+<div id="sliderContainer">
+  <label>🌍 Earth Orbital Period (seconds): <span id="scaleValue">1000</span></label><br>
+  <input id="scaleSlider" type="range" min="0" max="10000" value="1000" step="1">
+</div>
+
+<script type="module">
+import * as THREE from "https://cdn.skypack.dev/three@0.129.0";
+import { OrbitControls } from "https://cdn.skypack.dev/three@0.129.0/examples/jsm/controls/OrbitControls.js";
+
+// --- Scene & Camera ---
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 10000);
+camera.position.set(0, 150, 400);
+
+// --- Renderer ---
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// --- Controls ---
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+// --- Lights ---
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+scene.add(new THREE.PointLight(0xffffff, 2, 3000));
+
+// --- Ellipse Ring ---
+function createEllipseRing(radiusX, radiusY, centrex=0, segments=200) {
+  const points = [];
+  for (let i = 0; i <= segments; i++) {
+    const theta = (i/segments) * 2 * Math.PI;
+    points.push(new THREE.Vector3(radiusX*Math.cos(theta)+centrex, 0, radiusY*Math.sin(theta)));
+  }
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const material = new THREE.LineBasicMaterial({ color: 0x00AEEF, transparent:true, opacity:0.2 });
+  return new THREE.LineLoop(geometry, material);
+}
+
+// --- Orbits data ---
+const orbitsData = [
+  { a: 9.097,   b: 8.902594,  cx: -0.361 },   
+  { a: 16.998,  b: 16.997610, cx: -0.011 },   
+  { a: 23.5,    b: 23.496719, cx: -0.392 },   
+  { a: 35.806,  b: 35.649507, cx: -0.667 },   
+  { a: 122.279, b: 122.135775, cx: -2.519 },  
+  { a: 224.121, b: 223.795666, cx: -8.436 },  
+  { a: 450.995, b: 450.491123, cx: -9.868 },  
+  { a: 706.621, b: 706.594926, cx: -5.462 },  
+];
+orbitsData.forEach(o => scene.add(createEllipseRing(o.a,o.b,o.cx)));
+
+// --- Textures & Planets ---
+const textureLoader = new THREE.TextureLoader();
+function loadPlanetTexture(texture, radius) {
+  const geo = new THREE.SphereGeometry(radius, 32, 32);
+  const mat = new THREE.MeshStandardMaterial({ map: textureLoader.load(texture) });
+  return new THREE.Mesh(geo, mat);
+}
+
+// --- Orbital periods normalized to Earth = 1 ---
+const ratios = {
+  mercury: 0.241,
+  venus: 0.615,
+  earth: 1,
+  mars: 1.88,
+  jupiter: 11.86,
+  saturn: 29.46,
+  uranus: 84.01,
+  neptune: 164.8
+};
+
+// --- Planet day lengths in Earth days ---
+const planetDays = {
+  mercury: 58.65,
+  venus: 243,
+  earth: 1,
+  mars: 1.03,
+  jupiter: 0.413,
+  saturn: 0.444,
+  uranus: 0.718,
+  neptune: 0.671
+};
+
+// --- Planets array ---
+const planets = [
+  { mesh: loadPlanetTexture("./8k_sun.jpg", 5), key: null },
+  { mesh: loadPlanetTexture("./8k_mercury.jpg", 1), key: "mercury" },
+  { mesh: loadPlanetTexture("./8k_venus_surface.jpg", 2.3), key: "venus" },
+  { mesh: loadPlanetTexture("./earth_day_4096.jpg", 2.3), key: "earth" },
+  { mesh: loadPlanetTexture("./8k_mars.jpg", 2), key: "mars" },
+  { mesh: loadPlanetTexture("./8k_jupiter.jpg", 4), key: "jupiter" },
+  { mesh: loadPlanetTexture("./8k_saturn.jpg", 4), key: "saturn" },
+  { mesh: loadPlanetTexture("./2k_uranus.jpg", 3), key: "uranus" },
+  { mesh: loadPlanetTexture("./2k_neptune.jpg", 3), key: "neptune" }
+];
+planets.forEach(p => scene.add(p.mesh));
+
+// --- Asteroid Belt ---
+const stones = [];
+function createStone(radius, periodRatio, color=0xaaaaaa, size=0.2) {
+  const geo = new THREE.SphereGeometry(size, 8, 8);
+  const mat = new THREE.MeshStandardMaterial({ color });
+  const theta = Math.random()*2*Math.PI;
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(radius*Math.cos(theta), 0, radius*Math.sin(theta));
+  scene.add(m);
+  stones.push({ mesh: m, angle: theta, radius, periodRatio });
+}
+
+// Main Belt
+for(let i=0;i<1300;i++){
+  const r = 50 + Math.random()*10;
+  const periodRatio = 4 + Math.random()*2;
+  createStone(r, periodRatio);
+}
+
+// Outer Belt (Kuiper)
+for(let i=0;i<1000;i++){
+  const r = 710 + Math.random()*40;
+  const periodRatio = 200 + Math.random()*100;
+  createStone(r, periodRatio, 0x8888ff, 0.25);
+}
+
+// --- Angles ---
+const angles = new Array(planets.length).fill(0);
+
+// --- Period scale slider ---
+let periodScale = 1000; 
+const scaleSlider = document.getElementById("scaleSlider");
+const scaleValue = document.getElementById("scaleValue");
+scaleSlider.addEventListener("input", e => {
+  periodScale = parseFloat(e.target.value);
+  scaleValue.innerText = periodScale;
+});
+
+// --- Animation Loop ---
+function animate(){
+  requestAnimationFrame(animate);
+
+  // Planets orbit + realistic spin
+  for(let i=1;i<planets.length;i++){
+    const key = planets[i].key;
+    if(key){
+      const period = ratios[key]*periodScale; 
+      const speed = period>0 ? 2*Math.PI/period : 0;
+      angles[i]+=speed;
+      const {a,b,cx} = orbitsData[i-1];
+      planets[i].mesh.position.set(a*Math.cos(angles[i])+cx,0,b*Math.sin(angles[i]));
+
+      // Realistic spin: complete correct number of rotations per orbit
+      const rotationsPerOrbit = ratios[key] * 365 / planetDays[key]; // Earth = 365
+      const spinSpeed = rotationsPerOrbit * speed; // spin relative to orbital speed
+      planets[i].mesh.rotation.y += spinSpeed;
+    }
+  }
+
+  // Asteroids (main + outer)
+  stones.forEach(s=>{
+    const period = s.periodRatio * periodScale;
+    const speed = period>0 ? 2*Math.PI/period : 0;
+    s.angle+=speed;
+    s.mesh.position.set(s.radius*Math.cos(s.angle),0,s.radius*Math.sin(s.angle));
+  });
+
+  renderer.render(scene,camera);
+  controls.update();
+}
+animate();
+
+// --- Resize ---
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);
+});
+</script>
+</body>
+</html>
