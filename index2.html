@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>3D Solar System with Belts and Realistic Spins</title>
+  <title>3D Solar System with Labels</title>
   <style>
     * { margin: 0; padding: 0; }
     body { overflow: hidden; background: black; }
@@ -21,6 +21,18 @@
       border-radius: 8px;
     }
     input[type=range] { width: 300px; }
+    .label-container { pointer-events:none; display:block; }
+    .label {
+      color: white;
+      font-size: 14px;
+      font-family: Arial,sans-serif;
+      background: rgba(0,0,0,0.5);
+      padding: 2px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+      transform-origin: center bottom;
+      transition: transform 0.12s linear, opacity 0.2s linear;
+    }
   </style>
 </head>
 <body>
@@ -32,6 +44,10 @@
 <script type="module">
 import * as THREE from "https://cdn.skypack.dev/three@0.129.0";
 import { OrbitControls } from "https://cdn.skypack.dev/three@0.129.0/examples/jsm/controls/OrbitControls.js";
+import { CSS2DRenderer, CSS2DObject } from "https://cdn.skypack.dev/three@0.129.0/examples/jsm/renderers/CSS2DRenderer.js";
+import { EffectComposer } from 'https://cdn.skypack.dev/three@0.129.0/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'https://cdn.skypack.dev/three@0.129.0/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'https://cdn.skypack.dev/three@0.129.0/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 // --- Scene & Camera ---
 const scene = new THREE.Scene();
@@ -43,6 +59,15 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
+// --- Label Renderer ---
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(window.innerWidth, window.innerHeight);
+labelRenderer.domElement.style.position = "absolute";
+labelRenderer.domElement.style.top = "0";
+labelRenderer.domElement.style.left = "0";
+labelRenderer.domElement.style.pointerEvents = "none";
+document.body.appendChild(labelRenderer.domElement);
+
 // --- Controls ---
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -50,6 +75,10 @@ controls.enableDamping = true;
 // --- Lights ---
 scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 scene.add(new THREE.PointLight(0xffffff, 2, 3000));
+
+
+
+
 
 // --- Ellipse Ring ---
 function createEllipseRing(radiusX, radiusY, centrex=0, segments=200) {
@@ -107,10 +136,31 @@ const planetDays = {
   uranus: 0.718,
   neptune: 0.671
 };
+const textureLoader1 = new THREE.TextureLoader();
+const fireTexture = textureLoader1.load('./6.jpg');
+fireTexture.wrapS = fireTexture.wrapT = THREE.RepeatWrapping;
+// Sun Material
+const sunMaterial = new THREE.MeshStandardMaterial({
+  map: fireTexture,
+  emissive: new THREE.Color(0xffaa00),
+  emissiveMap: fireTexture,
+  emissiveIntensity: 2
+});
+
+// Sun Mesh
+const sunGeometry = new THREE.SphereGeometry(5, 18, 18);
+const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
+scene.add(sunMesh);
+const sunLight = new THREE.PointLight(0xffddaa, 10, 1000);
+sunLight.position.copy(sunMesh.position);
+scene.add(sunLight);
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85));
 
 // --- Planets array ---
 const planets = [
-  { mesh: loadPlanetTexture("./8k_sun.jpg", 5), key: null },
+  { mesh: loadPlanetTexture("./8k_sun.jpg", 4.9), key: "sun" },
   { mesh: loadPlanetTexture("./8k_mercury.jpg", 1), key: "mercury" },
   { mesh: loadPlanetTexture("./8k_venus_surface.jpg", 2.3), key: "venus" },
   { mesh: loadPlanetTexture("./earth_day_4096.jpg", 2.3), key: "earth" },
@@ -121,6 +171,34 @@ const planets = [
   { mesh: loadPlanetTexture("./2k_neptune.jpg", 3), key: "neptune" }
 ];
 planets.forEach(p => scene.add(p.mesh));
+
+// --- Per-planet label X/Y distances ---
+const labelSettings = {
+  sun:     { x: 400, y: 80 },
+  mercury: { x: 250, y: 20 },
+  venus:   { x: 250, y: 25 },
+  earth:   { x: 250, y: 30 },
+  mars:    { x: 300, y: 35 },
+  jupiter: { x: 1500, y: 50 },
+  saturn:  { x: 1600, y: 60 },
+  uranus:  { x: 1700, y: 70 },
+  neptune: { x: 1800, y: 150 }
+};
+
+// --- Add labels ---
+planets.forEach(p => {
+  const div = document.createElement("div");
+  div.className = "label";
+  div.innerText = p.key.charAt(0).toUpperCase() + p.key.slice(1);
+
+  const label = new CSS2DObject(div);
+  label.position.set(0, p.mesh.geometry.parameters.radius + 0.5, 0); 
+  p.mesh.add(label);
+
+  p.labelDiv = div;
+  p.labelX = labelSettings[p.key].x;
+  p.labelY = labelSettings[p.key].y;
+});
 
 // --- Asteroid Belt ---
 const stones = [];
@@ -133,20 +211,12 @@ function createStone(radius, periodRatio, color=0xaaaaaa, size=0.2) {
   scene.add(m);
   stones.push({ mesh: m, angle: theta, radius, periodRatio });
 }
-
-// Main Belt
-for(let i=0;i<1300;i++){
-  const r = 50 + Math.random()*10;
-  const periodRatio = 4 + Math.random()*2;
-  createStone(r, periodRatio);
-}
-
-// Outer Belt (Kuiper)
-for(let i=0;i<1000;i++){
-  const r = 710 + Math.random()*40;
-  const periodRatio = 200 + Math.random()*100;
-  createStone(r, periodRatio, 0x8888ff, 0.25);
-}
+for(let i=0;i<100;i++) createStone(50 + Math.random()*10, 4 + Math.random()*2);
+for(let i=0;i<50;i++) createStone(63 + Math.random()*10, 4 + Math.random()*2);
+for(let i=0;i<50;i++) createStone(65 + Math.random()*10, 4 + Math.random()*2);
+for(let i=0;i<900;i++) createStone(55 + Math.random()*10, 4 + Math.random()*2);
+for(let i=0;i<100;i++) createStone(60 + Math.random()*10, 4 + Math.random()*2);
+for(let i=0;i<10000;i++) createStone(710 + Math.random()*40, 200 + Math.random()*100, 0x8888ff, 0.25);
 
 // --- Angles ---
 const angles = new Array(planets.length).fill(0);
@@ -160,11 +230,13 @@ scaleSlider.addEventListener("input", e => {
   scaleValue.innerText = periodScale;
 });
 
-// --- Animation Loop ---
+// --- Animation loop ---
 function animate(){
   requestAnimationFrame(animate);
 
-  // Planets orbit + realistic spin
+    // fireTexture.offset.x += 0.001;
+  fireTexture.offset.y += 0.001;
+  // Planet orbit + spin
   for(let i=1;i<planets.length;i++){
     const key = planets[i].key;
     if(key){
@@ -174,22 +246,39 @@ function animate(){
       const {a,b,cx} = orbitsData[i-1];
       planets[i].mesh.position.set(a*Math.cos(angles[i])+cx,0,b*Math.sin(angles[i]));
 
-      // Realistic spin: complete correct number of rotations per orbit
-      const rotationsPerOrbit = ratios[key] * 365 / planetDays[key]; // Earth = 365
-      const spinSpeed = rotationsPerOrbit * speed; // spin relative to orbital speed
-      planets[i].mesh.rotation.y += spinSpeed;
+      const rotationsPerOrbit = ratios[key] * 365 / planetDays[key];
+      planets[i].mesh.rotation.y += rotationsPerOrbit * speed;
     }
   }
 
-  // Asteroids (main + outer)
+  // Asteroids
   stones.forEach(s=>{
-    const period = s.periodRatio * periodScale;
-    const speed = period>0 ? 2*Math.PI/period : 0;
+    const speed = 2*Math.PI/(s.periodRatio*periodScale);
     s.angle+=speed;
     s.mesh.position.set(s.radius*Math.cos(s.angle),0,s.radius*Math.sin(s.angle));
   });
 
-  renderer.render(scene,camera);
+  // Update labels
+  planets.forEach(p => {
+    if(p.labelDiv){
+      const distance = camera.position.distanceTo(p.mesh.position);
+      if(distance > p.labelX){
+        p.labelDiv.style.opacity = "0";
+      } else {
+        p.labelDiv.style.opacity = "1";
+        if(distance < p.labelY){
+          let scale = p.labelY / distance;
+          scale = Math.min(scale, 3);
+          p.labelDiv.style.transform = scale(${scale});
+        } else {
+          p.labelDiv.style.transform = "scale(1)";
+        }
+      }
+    }
+  });
+
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
   controls.update();
 }
 animate();
@@ -198,7 +287,8 @@ animate();
 window.addEventListener('resize', ()=>{
   camera.aspect = window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth,window.innerHeight);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  labelRenderer.setSize(window.innerWidth, window.innerHeight);
 });
 </script>
 </body>
